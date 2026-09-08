@@ -1,0 +1,31 @@
+{
+  "name": "docker-mailserver-api",
+  "version": "0.1.0",
+  "description": "Public MIT-licensed Bun/Elysia API for docker-mailserver",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "bun@1.3.14",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "test": "bun test test",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run lint && bun run typecheck && bun run test",
+    "prepare": "git config core.hooksPath .githooks",
+    "smoke": "bun scripts/smoke.ts"
+  },
+  "dependencies": {
+    "elysia": "1.4.30",
+    "imapflow": "2.0.0",
+    "nodemailer": "10.0.1",
+    "postal-mime": "3.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@types/bun": "1.4.2",
+    "@types/nodemailer": "8.0.1",
+    "typescript": "7.0.2"
+  }
+}

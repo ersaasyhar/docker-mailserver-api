@@ -1,0 +1,27 @@
+[Unit]
+Description=Docker Mailserver Admin API
+Documentation=https://github.com/ersaasyhar/docker-mailserver-api
+After=network-online.target docker.service tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mail-api
+Group=mail-api
+SupplementaryGroups=docker
+WorkingDirectory=/opt/docker-mailserver-api
+EnvironmentFile=/etc/docker-mailserver-api.env
+ExecStart=/usr/local/bin/bun run start
+Restart=on-failure
+RestartSec=5s
+KillMode=process
+LimitNOFILE=65535
+
+# Hardening
+NoNewPrivileges=false
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

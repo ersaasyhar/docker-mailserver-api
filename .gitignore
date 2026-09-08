@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.local
+*.log
+dist/
+coverage/
+*.pem
+*.key
+*.crt
+test/fixtures/certs/
+test/fixtures/data/
+test/fixtures/state/
