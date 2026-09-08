@@ -145,7 +145,25 @@ function writePostfixConfigs(): void {
   fs.writeFileSync(mainCf, mainCfContent);
 }
 
-async function waitForHealth(maxSeconds = 120): Promise<void> {
+async function waitForRunning(maxSeconds = 30): Promise<void> {
+  console.log("Waiting for container to start running...");
+  for (let i = 0; i < maxSeconds; i++) {
+    const res = runCmd([
+      "docker",
+      "inspect",
+      "--format={{.State.Running}}",
+      CONTAINER_NAME,
+    ]);
+    if (res.stdout.trim() === "true") {
+      console.log("Container is running!");
+      return;
+    }
+    await Bun.sleep(1000);
+  }
+  throw new Error("Timed out waiting for container to enter running state.");
+}
+
+async function waitForHealth(maxSeconds = 180): Promise<void> {
   console.log("Waiting for Docker Mailserver container readiness...");
   for (let i = 0; i < maxSeconds; i++) {
     const res = runCmd([
@@ -159,8 +177,15 @@ async function waitForHealth(maxSeconds = 120): Promise<void> {
       console.log("Container is healthy!");
       return;
     }
+    if (i % 15 === 0) {
+      console.log(
+        `Still waiting for health (current status: "${status}")... [${i}s]`,
+      );
+    }
     await Bun.sleep(1000);
   }
+  const logs = runCmd(["docker", "logs", "--tail", "100", CONTAINER_NAME]);
+  console.error("DMS container logs:\n", logs.stdout, logs.stderr);
   throw new Error(
     "Timed out waiting for mailserver container to become healthy.",
   );
@@ -168,6 +193,12 @@ async function waitForHealth(maxSeconds = 120): Promise<void> {
 
 async function preseedAccounts(): Promise<void> {
   console.log("Preseeding accounts and master user in DMS fixture...");
+  // Wait briefly for setup command availability
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const check = runCmd(["docker", "exec", CONTAINER_NAME, "which", "setup"]);
+    if (check.exitCode === 0) break;
+    await Bun.sleep(1000);
+  }
   // Master user
   await runCmdStdin(
     [
@@ -310,8 +341,9 @@ async function main(): Promise<void> {
   });
 
   try {
-    await waitForHealth();
+    await waitForRunning();
     await preseedAccounts();
+    await waitForHealth();
 
     const imapPort = getMappedPort("993");
     const smtpPort = getMappedPort("587");
