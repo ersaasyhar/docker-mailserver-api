@@ -1,0 +1,10 @@
+# Docker Mailserver API
+
+> Administrative API for accounts and mail. Email operations require an operator-supplied bearer token.
+
+## Documentation
+
+- [Agent usage guide](/docs)
+- [OpenAPI contract](/docs/openapi.json)
+
+GET /v1/accounts/{email}/messages/latest returns the full latest message, or 204 when the folder is empty.

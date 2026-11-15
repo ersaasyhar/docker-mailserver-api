@@ -87,7 +87,9 @@ To allow `admin@korintus.me` to send on behalf of any address in `korintus.me` w
 
 ## API Endpoints Reference
 
-All requests must supply `Authorization: Bearer <ADMIN_API_TOKEN>`. Path parameters for emails must be URL-encoded (e.g. `user%40korintus.me`).
+Mail and health operations require `Authorization: Bearer <ADMIN_API_TOKEN>`. Path parameters for emails must be URL-encoded (e.g. `user%40korintus.me`).
+
+Static discovery is public within the network boundary: [`/llms.txt`](/llms.txt), [`/docs`](/docs), and [`/docs/openapi.json`](/docs/openapi.json). The canonical files are [agent usage](docs/agent-usage.md), [OpenAPI](docs/openapi.json), and [discovery](docs/llms.txt).
 
 ### Health & Liveness
 - **`GET /health`**
@@ -184,6 +186,9 @@ All requests must supply `Authorization: Bearer <ADMIN_API_TOKEN>`. Path paramet
       "nextBeforeUid": 99
     }
     ```
+
+- **`GET /v1/accounts/:email/messages/latest?folder=INBOX`**
+  - Returns the highest-UID full message without marking it seen, or bodyless 204 when the folder is empty.
 
 - **`GET /v1/accounts/:email/messages/:uid?folder=INBOX&uidValidity=12345`**
   - Fetch parsed message details without marking it as seen.

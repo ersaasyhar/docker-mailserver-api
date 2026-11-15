@@ -1,0 +1,819 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Docker Mailserver API",
+    "version": "1.0.0",
+    "description": "Administrative mail API. All operations except static documentation require a bearer token."
+  },
+  "servers": [{ "url": "/" }],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Liveness",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": { "status": { "const": "ok" } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/docs/openapi.json": {
+      "get": {
+        "operationId": "getOpenApiDocument",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI document",
+            "content": {
+              "application/json": { "schema": { "type": "object" } }
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "operationId": "getApiUsageGuide",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Agent usage guide",
+            "content": { "text/markdown": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/llms.txt": {
+      "get": {
+        "operationId": "getAgentDiscovery",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Agent discovery",
+            "content": { "text/plain": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/v1/accounts": {
+      "get": {
+        "operationId": "listAccounts",
+        "responses": {
+          "200": {
+            "description": "Accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Account" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/Upstream" }
+        }
+      },
+      "post": {
+        "operationId": "createAccount",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateAccount" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Provisioning pending",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProvisionResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Invalid" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "502": { "$ref": "#/components/responses/Upstream" }
+        }
+      }
+    },
+    "/v1/accounts/{email}": {
+      "parameters": [{ "$ref": "#/components/parameters/Email" }],
+      "get": {
+        "operationId": "getAccount",
+        "responses": {
+          "200": {
+            "description": "Account",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Account" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "operationId": "updateAccountPassword",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["password"],
+                "properties": {
+                  "password": { "$ref": "#/components/schemas/Password" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Provisioning pending",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProvisionResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Invalid" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAccount",
+        "description": "Irreversibly purge the account and mail. confirmEmail must match and purge must be true. The configured SMTP_USER cannot be purged.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["confirmEmail", "purge"],
+                "properties": {
+                  "confirmEmail": { "type": "string" },
+                  "purge": { "const": true }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Account purged" },
+          "400": { "$ref": "#/components/responses/Invalid" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/accounts/{email}/folders": {
+      "parameters": [{ "$ref": "#/components/parameters/Email" }],
+      "get": {
+        "operationId": "listFolders",
+        "responses": {
+          "200": {
+            "description": "Folders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Folder" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/v1/accounts/{email}/messages": {
+      "parameters": [
+        { "$ref": "#/components/parameters/Email" },
+        { "$ref": "#/components/parameters/Folder" }
+      ],
+      "get": {
+        "operationId": "listMessages",
+        "description": "Descending UID. beforeUid requires the matching uidValidity. Limit defaults to 50 and is clamped to 1–100.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 50 }
+          },
+          {
+            "name": "beforeUid",
+            "in": "query",
+            "schema": { "type": "integer" }
+          },
+          { "$ref": "#/components/parameters/OptionalValidity" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MessagePage" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Invalid" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/v1/accounts/{email}/messages/latest": {
+      "parameters": [
+        { "$ref": "#/components/parameters/Email" },
+        { "$ref": "#/components/parameters/Folder" }
+      ],
+      "get": {
+        "operationId": "getLatestMessage",
+        "description": "Full message with highest UID in the folder, without marking it seen. A selection/read race can return 404 or 409. Inbound full message limit: 10 MiB.",
+        "responses": {
+          "200": {
+            "description": "Latest message",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MessageDetail" }
+              }
+            }
+          },
+          "204": { "description": "Folder is empty" },
+          "400": { "$ref": "#/components/responses/Invalid" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/InvalidMessage" },
+          "502": { "$ref": "#/components/responses/Upstream" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/v1/accounts/{email}/messages/{uid}": {
+      "parameters": [
+        { "$ref": "#/components/parameters/Email" },
+        { "$ref": "#/components/parameters/Uid" },
+        { "$ref": "#/components/parameters/Folder" },
+        { "$ref": "#/components/parameters/Validity" }
+      ],
+      "get": {
+        "operationId": "getMessage",
+        "responses": {
+          "200": {
+            "description": "Full message, read without marking seen; maximum 10 MiB",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MessageDetail" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Invalid" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/InvalidMessage" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      },
+      "patch": {
+        "operationId": "updateMessageFlags",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "At least one flag is required.",
+                "properties": {
+                  "seen": { "type": "boolean" },
+                  "flagged": { "type": "boolean" }
+                },
+                "anyOf": [{ "required": ["seen"] }, { "required": ["flagged"] }]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated flags",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FlagResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Invalid" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      },
+      "delete": {
+        "operationId": "trashMessage",
+        "description": "Move message to Trash, not account purge.",
+        "responses": {
+          "204": { "description": "Moved to Trash" },
+          "400": { "$ref": "#/components/responses/Invalid" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/v1/accounts/{email}/messages/{uid}/attachments/{index}": {
+      "parameters": [
+        { "$ref": "#/components/parameters/Email" },
+        { "$ref": "#/components/parameters/Uid" },
+        { "$ref": "#/components/parameters/Folder" },
+        { "$ref": "#/components/parameters/Validity" },
+        {
+          "name": "index",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "integer", "minimum": 0 }
+        }
+      ],
+      "get": {
+        "operationId": "getAttachment",
+        "responses": {
+          "200": {
+            "description": "Attachment bytes",
+            "headers": {
+              "Content-Disposition": {
+                "schema": { "type": "string" },
+                "description": "Attachment filename"
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Invalid" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/v1/accounts/{email}/messages/{uid}/move": {
+      "parameters": [
+        { "$ref": "#/components/parameters/Email" },
+        { "$ref": "#/components/parameters/Uid" },
+        { "$ref": "#/components/parameters/Folder" },
+        { "$ref": "#/components/parameters/Validity" }
+      ],
+      "post": {
+        "operationId": "moveMessage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["destination"],
+                "properties": {
+                  "destination": { "enum": ["archive", "trash"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Move result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["moved", "destination"],
+                  "properties": {
+                    "moved": { "type": "boolean" },
+                    "destination": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Invalid" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/v1/accounts/{email}/messages/send": {
+      "parameters": [{ "$ref": "#/components/parameters/Email" }],
+      "post": {
+        "operationId": "sendMessage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SendMessage" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SMTP acceptance, not final delivery",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SendResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Invalid" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "502": { "$ref": "#/components/responses/Upstream" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer" } },
+    "parameters": {
+      "Email": {
+        "name": "email",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      },
+      "Uid": {
+        "name": "uid",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "integer", "minimum": 1 }
+      },
+      "Folder": {
+        "name": "folder",
+        "in": "query",
+        "schema": { "type": "string", "default": "INBOX" }
+      },
+      "Validity": {
+        "name": "uidValidity",
+        "in": "query",
+        "required": true,
+        "schema": { "type": "string", "pattern": "^[0-9]+$" }
+      },
+      "OptionalValidity": {
+        "name": "uidValidity",
+        "in": "query",
+        "schema": { "type": "string", "pattern": "^[0-9]+$" }
+      }
+    },
+    "responses": {
+      "Invalid": {
+        "description": "INVALID_REQUEST",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "UNAUTHORIZED",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "DOMAIN_FORBIDDEN",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "NOT_FOUND",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "CONFLICT or STALE_MAILBOX",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "TooLarge": {
+        "description": "MESSAGE_TOO_LARGE",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "InvalidMessage": {
+        "description": "INVALID_MESSAGE",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "Internal": {
+        "description": "INTERNAL_ERROR",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "Upstream": {
+        "description": "UPSTREAM_FAILURE",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "UPSTREAM_UNAVAILABLE or BUSY",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      },
+      "Account": {
+        "type": "object",
+        "required": ["email"],
+        "properties": {
+          "email": { "type": "string", "example": "bob@example.org" }
+        }
+      },
+      "Password": {
+        "type": "string",
+        "description": "12–256 UTF-8 bytes; no NUL, CR or LF."
+      },
+      "CreateAccount": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string" },
+          "password": { "$ref": "#/components/schemas/Password" }
+        }
+      },
+      "ProvisionResult": {
+        "type": "object",
+        "required": ["email", "provisioning"],
+        "properties": {
+          "email": { "type": "string" },
+          "provisioning": { "const": "pending" }
+        }
+      },
+      "Folder": {
+        "type": "object",
+        "required": ["path", "name"],
+        "properties": {
+          "path": { "type": "string" },
+          "name": { "type": "string" },
+          "specialUse": { "type": "string" }
+        }
+      },
+      "Mailbox": {
+        "type": "object",
+        "required": ["name", "address"],
+        "properties": {
+          "name": { "type": "string" },
+          "address": { "type": "string" }
+        }
+      },
+      "Address": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/Mailbox" },
+          {
+            "type": "object",
+            "required": ["name", "group"],
+            "properties": {
+              "name": { "type": "string" },
+              "group": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/Mailbox" }
+              }
+            }
+          }
+        ]
+      },
+      "MessageSummary": {
+        "type": "object",
+        "required": ["uid", "flags", "from", "to", "subject", "date", "size"],
+        "properties": {
+          "uid": { "type": "integer" },
+          "flags": { "type": "array", "items": { "type": "string" } },
+          "from": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/Address" },
+              { "type": "null" }
+            ]
+          },
+          "to": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Address" }
+          },
+          "subject": { "type": ["string", "null"] },
+          "date": { "type": ["string", "null"] },
+          "size": { "type": "integer" }
+        }
+      },
+      "Attachment": {
+        "type": "object",
+        "required": ["index", "filename", "mimeType", "size", "contentId"],
+        "properties": {
+          "index": { "type": "integer" },
+          "filename": { "type": ["string", "null"] },
+          "mimeType": { "type": "string" },
+          "size": { "type": "integer" },
+          "contentId": { "type": ["string", "null"] }
+        }
+      },
+      "MessageDetail": {
+        "type": "object",
+        "required": [
+          "uid",
+          "uidValidity",
+          "folder",
+          "flags",
+          "from",
+          "to",
+          "cc",
+          "subject",
+          "date",
+          "text",
+          "html",
+          "attachments"
+        ],
+        "properties": {
+          "uid": { "type": "integer", "example": 202 },
+          "uidValidity": { "type": "string" },
+          "folder": { "type": "string" },
+          "flags": { "type": "array", "items": { "type": "string" } },
+          "from": {
+            "anyOf": [
+              { "$ref": "#/components/schemas/Address" },
+              { "type": "null" }
+            ]
+          },
+          "to": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Address" }
+          },
+          "cc": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Address" }
+          },
+          "subject": { "type": ["string", "null"] },
+          "date": { "type": ["string", "null"] },
+          "text": { "type": ["string", "null"] },
+          "html": { "type": ["string", "null"] },
+          "attachments": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Attachment" }
+          }
+        }
+      },
+      "MessagePage": {
+        "type": "object",
+        "required": ["folder", "uidValidity", "items", "nextBeforeUid"],
+        "properties": {
+          "folder": { "type": "string" },
+          "uidValidity": { "type": "string" },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MessageSummary" }
+          },
+          "nextBeforeUid": { "type": ["integer", "null"] }
+        }
+      },
+      "FlagResult": {
+        "type": "object",
+        "required": ["uid", "uidValidity", "folder", "flags"],
+        "properties": {
+          "uid": { "type": "integer" },
+          "uidValidity": { "type": "string" },
+          "folder": { "type": "string" },
+          "flags": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "SendMessage": {
+        "type": "object",
+        "description": "1–100 recipients total across to, cc and bcc; to may be empty. Nonblank text or html required. Compiled MIME limit 10 MiB.",
+        "required": ["to", "subject"],
+        "properties": {
+          "to": { "type": "array", "items": { "type": "string" } },
+          "cc": { "type": "array", "items": { "type": "string" } },
+          "bcc": { "type": "array", "items": { "type": "string" } },
+          "subject": {
+            "type": "string",
+            "maxLength": 998,
+            "description": "No NUL, CR or LF."
+          },
+          "text": { "type": "string" },
+          "html": { "type": "string" },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["filename", "contentType", "contentBase64"],
+              "properties": {
+                "filename": {
+                  "type": "string",
+                  "description": "Validated filename, no path separators or control characters."
+                },
+                "contentType": {
+                  "type": "string",
+                  "description": "MIME token pair."
+                },
+                "contentBase64": {
+                  "type": "string",
+                  "description": "Valid base64 only."
+                }
+              }
+            }
+          }
+        }
+      },
+      "SendResult": {
+        "type": "object",
+        "required": ["messageId", "accepted", "rejected", "sentCopySaved"],
+        "properties": {
+          "messageId": { "type": "string" },
+          "accepted": { "type": "array", "items": { "type": "string" } },
+          "rejected": { "type": "array", "items": { "type": "string" } },
+          "sentCopySaved": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

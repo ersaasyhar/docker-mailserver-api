@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { Elysia, t } from "elysia";
+import openapi from "../docs/openapi.json";
 import type { AccountService } from "./accounts";
 import type { Config } from "./config";
 import type { MailService } from "./mail";
@@ -143,6 +144,15 @@ export function createApp(config: Config, services: Services): Elysia {
         },
       );
     }
+    const pathname = new URL(request.url).pathname;
+    if (
+      request.method === "GET" &&
+      (pathname === "/docs" ||
+        pathname === "/docs/openapi.json" ||
+        pathname === "/llms.txt")
+    ) {
+      return;
+    }
 
     // Verify Bearer Token before parsing request bodies or upstream work
     const authHeader = request.headers.get("authorization");
@@ -277,6 +287,32 @@ export function createApp(config: Config, services: Services): Elysia {
   app.get("/health", () => {
     return { status: "ok" };
   });
+  app.get("/docs/openapi.json", () => openapi);
+  app.get(
+    "/docs",
+    () =>
+      new Response(
+        Bun.file(new URL("../docs/agent-usage.md", import.meta.url)),
+        {
+          headers: {
+            "Content-Type": "text/markdown; charset=utf-8",
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+          },
+        },
+      ),
+  );
+  app.get(
+    "/llms.txt",
+    () =>
+      new Response(Bun.file(new URL("../docs/llms.txt", import.meta.url)), {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      }),
+  );
 
   // -------------------------------------------------------------
   // Account CRUD Routes: /v1/accounts
@@ -367,6 +403,23 @@ export function createApp(config: Config, services: Services): Elysia {
           limit,
           beforeUid,
           uidValidity,
+        });
+      })
+      // GET /v1/accounts/:email/messages/latest
+      .get("/:email/messages/latest", async ({ params, query, set }) => {
+        const email = decodeEmail(params.email);
+        const folder = query.folder?.trim() || "INBOX";
+        const page = await services.mail.listMessages(email, {
+          folder,
+          limit: 1,
+        });
+        if (page.items.length === 0) {
+          set.status = 204;
+          return;
+        }
+        return await services.mail.getMessage(email, page.items[0].uid, {
+          folder: page.folder,
+          uidValidity: page.uidValidity,
         });
       })
       // GET /v1/accounts/:email/messages/:uid
