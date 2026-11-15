@@ -34,6 +34,11 @@ export interface MessageDetail {
   attachments: AttachmentSummary[];
 }
 
+export interface GlobalLatestMessageDetail extends MessageDetail {
+  account: string;
+  receivedAt: string;
+}
+
 export interface FolderItem {
   path: string;
   name: string;

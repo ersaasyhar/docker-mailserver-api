@@ -3,8 +3,12 @@ import { Elysia, t } from "elysia";
 import openapi from "../docs/openapi.json";
 import type { AccountService } from "./accounts";
 import type { Config } from "./config";
-import type { MailService } from "./mail";
-import { type SendMessagePayload, validateSendPayload } from "./messages";
+import type { LatestReceivedMessage, MailService } from "./mail";
+import {
+  type GlobalLatestMessageDetail,
+  type SendMessagePayload,
+  validateSendPayload,
+} from "./messages";
 
 export type ErrorCode =
   | "INVALID_REQUEST"
@@ -313,6 +317,48 @@ export function createApp(config: Config, services: Services): Elysia {
         },
       }),
   );
+
+  app.get("/v1/messages/latest", async ({ request }) => {
+    if (new URL(request.url).searchParams.size > 0) {
+      throw new AppError(
+        "INVALID_REQUEST",
+        "Query parameters are not supported.",
+      );
+    }
+    const accounts = await services.accounts.listAccounts();
+    let winner: { account: string; message: LatestReceivedMessage } | null =
+      null;
+    for (const account of accounts) {
+      const message = await services.mail.findLatestReceivedMessage(
+        account.email,
+        "INBOX",
+      );
+      if (
+        message &&
+        (!winner ||
+          message.receivedAt > winner.message.receivedAt ||
+          (message.receivedAt === winner.message.receivedAt &&
+            account.email < winner.account))
+      ) {
+        winner = { account: account.email, message };
+      }
+    }
+    if (!winner) return new Response(null, { status: 204 });
+    const detail = await services.mail.getMessage(
+      winner.account,
+      winner.message.uid,
+      {
+        folder: winner.message.folder,
+        uidValidity: winner.message.uidValidity,
+      },
+    );
+    const result: GlobalLatestMessageDetail = {
+      ...detail,
+      account: winner.account,
+      receivedAt: winner.message.receivedAt,
+    };
+    return result;
+  });
 
   // -------------------------------------------------------------
   // Account CRUD Routes: /v1/accounts

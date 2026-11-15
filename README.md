@@ -187,6 +187,9 @@ Static discovery is public within the network boundary: [`/llms.txt`](/llms.txt)
     }
     ```
 
+- **`GET /v1/messages/latest`**
+  - Scans all managed INBOXes by IMAP receipt time and returns the full message with receiving `account` and `receivedAt`, or bodyless 204 when all are empty. The sequential scan is not a snapshot; see the [agent guide](docs/agent-usage.md).
+
 - **`GET /v1/accounts/:email/messages/latest?folder=INBOX`**
   - Returns the highest-UID full message without marking it seen, or bodyless 204 when the folder is empty.
 

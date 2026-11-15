@@ -4,6 +4,7 @@ import {
   validateAccountPassword,
 } from "../src/accounts";
 import { loadConfig, validateCorsOrigin } from "../src/config";
+import { selectLatestReceivedMessage } from "../src/mail";
 import {
   extractAttachment,
   parseRawEmail,
@@ -265,5 +266,63 @@ SGVsbG8gV29ybGQ=
     expect(validateUidValidity("123456")).toBe("123456");
     expect(() => validateUidValidity("invalid")).toThrow();
     expect(() => validateUidValidity("")).toThrow();
+  });
+});
+
+describe("receipt metadata selection", () => {
+  async function* messages(
+    values: Array<{ uid: number; internalDate?: Date | string }>,
+  ) {
+    yield* values;
+  }
+
+  it("selects receipt time rather than UID and normalizes mixed dates", async () => {
+    expect(
+      await selectLatestReceivedMessage(
+        messages([
+          { uid: 20, internalDate: new Date("2024-01-01T00:00:00Z") },
+          { uid: 1, internalDate: "2024-01-02T01:00:00+01:00" },
+        ]),
+      ),
+    ).toEqual({ uid: 1, receivedAt: "2024-01-02T00:00:00.000Z" });
+  });
+
+  it("breaks ties by higher UID regardless of order", async () => {
+    for (const uids of [
+      [1, 2],
+      [2, 1],
+    ]) {
+      expect(
+        (
+          await selectLatestReceivedMessage(
+            messages(
+              uids.map((uid) => ({
+                uid,
+                internalDate: "2024-01-01T00:00:00Z",
+              })),
+            ),
+          )
+        )?.uid,
+      ).toBe(2);
+    }
+    expect(await selectLatestReceivedMessage(messages([]))).toBeNull();
+  });
+
+  it("rejects missing or invalid dates and iterator errors", async () => {
+    for (const internalDate of [undefined, "invalid"]) {
+      await expect(
+        selectLatestReceivedMessage(messages([{ uid: 1, internalDate }])),
+      ).rejects.toMatchObject({ code: "UPSTREAM_FAILURE" });
+    }
+    async function* broken(): AsyncGenerator<{
+      uid: number;
+      internalDate?: string;
+    }> {
+      yield { uid: 1, internalDate: "2024-01-01T00:00:00Z" };
+      throw new Error("fetch failed");
+    }
+    await expect(selectLatestReceivedMessage(broken())).rejects.toThrow(
+      "fetch failed",
+    );
   });
 });

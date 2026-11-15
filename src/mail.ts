@@ -19,8 +19,52 @@ import {
   validateUidValidity,
 } from "./messages";
 
+export interface ReceivedMessageCoordinate {
+  uid: number;
+  receivedAt: string;
+}
+
+export interface LatestReceivedMessage extends ReceivedMessageCoordinate {
+  folder: string;
+  uidValidity: string;
+}
+
+export async function selectLatestReceivedMessage(
+  messages: AsyncIterable<{ uid: number; internalDate?: Date | string }>,
+): Promise<ReceivedMessageCoordinate | null> {
+  let winner: ReceivedMessageCoordinate | null = null;
+  let latest = -Infinity;
+  for await (const message of messages) {
+    const timestamp =
+      message.internalDate instanceof Date
+        ? message.internalDate.getTime()
+        : Date.parse(message.internalDate ?? "");
+    if (!Number.isFinite(timestamp)) {
+      throw new AppError(
+        "UPSTREAM_FAILURE",
+        "Message receipt time is unavailable.",
+      );
+    }
+    if (
+      timestamp > latest ||
+      (timestamp === latest && message.uid > (winner?.uid ?? -Infinity))
+    ) {
+      latest = timestamp;
+      winner = {
+        uid: message.uid,
+        receivedAt: new Date(timestamp).toISOString(),
+      };
+    }
+  }
+  return winner;
+}
+
 export interface MailService {
   listFolders(email: string): Promise<FolderItem[]>;
+  findLatestReceivedMessage(
+    email: string,
+    folder: string,
+  ): Promise<LatestReceivedMessage | null>;
   listMessages(
     email: string,
     params: {
@@ -174,6 +218,46 @@ export class DefaultMailService implements MailService {
         });
       }
       return items;
+    });
+  }
+
+  async findLatestReceivedMessage(
+    email: string,
+    folder: string,
+  ): Promise<LatestReceivedMessage | null> {
+    const validFolder = validateFolder(folder);
+    return this.withImapClient(email, async (client) => {
+      let lock: Awaited<ReturnType<typeof client.getMailboxLock>>;
+      try {
+        lock = await client.getMailboxLock(validFolder);
+      } catch {
+        throw new AppError("NOT_FOUND", "Folder not found.");
+      }
+      try {
+        if (!client.mailbox)
+          throw new AppError("NOT_FOUND", "Folder not found.");
+        const uidValidity = client.mailbox.uidValidity.toString();
+        if (client.mailbox.exists === 0) return null;
+        try {
+          const winner = await selectLatestReceivedMessage(
+            client.fetch("1:*", { uid: true, internalDate: true }),
+          );
+          if (!winner)
+            throw new AppError(
+              "UPSTREAM_FAILURE",
+              "Failed to fetch message receipt times.",
+            );
+          return { ...winner, folder: validFolder, uidValidity };
+        } catch (error) {
+          if (error instanceof AppError) throw error;
+          throw new AppError(
+            "UPSTREAM_FAILURE",
+            "Failed to fetch message receipt times.",
+          );
+        }
+      } finally {
+        lock.release();
+      }
     });
   }
 

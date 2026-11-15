@@ -66,6 +66,50 @@
         }
       }
     },
+    "/v1/messages/latest": {
+      "get": {
+        "operationId": "getLatestReceivedMessage",
+        "description": "Scans all managed INBOXes sequentially by IMAP INTERNALDATE and returns the full message without marking it Seen. Ties select the higher UID within an inbox, then the lexicographically smaller account across inboxes. This full metadata scan has no partial successes and is not a snapshot: mail arriving after an inbox is scanned may require another call. INTERNALDATE may be preserved on import or copy.",
+        "responses": {
+          "200": {
+            "description": "Latest observed received message (fixture example)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlobalLatestMessageDetail"
+                },
+                "example": {
+                  "account": "user@example.org",
+                  "receivedAt": "2026-01-02T12:00:00.000Z",
+                  "uid": 42,
+                  "uidValidity": "1000",
+                  "folder": "INBOX",
+                  "flags": [],
+                  "from": { "name": "Sender", "address": "sender@example.org" },
+                  "to": [{ "name": "User", "address": "user@example.org" }],
+                  "cc": [],
+                  "subject": "Fixture",
+                  "date": "2026-01-02T11:59:00.000Z",
+                  "text": "Fixture body",
+                  "html": "<p>Fixture body</p>",
+                  "attachments": []
+                }
+              }
+            }
+          },
+          "204": { "description": "No managed accounts or all inboxes empty" },
+          "400": { "$ref": "#/components/responses/Invalid" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/InvalidMessage" },
+          "500": { "$ref": "#/components/responses/Internal" },
+          "502": { "$ref": "#/components/responses/Upstream" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
     "/v1/accounts": {
       "get": {
         "operationId": "listAccounts",
@@ -697,6 +741,19 @@
           "size": { "type": "integer" },
           "contentId": { "type": ["string", "null"] }
         }
+      },
+      "GlobalLatestMessageDetail": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MessageDetail" },
+          {
+            "type": "object",
+            "required": ["account", "receivedAt"],
+            "properties": {
+              "account": { "type": "string" },
+              "receivedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        ]
       },
       "MessageDetail": {
         "type": "object",

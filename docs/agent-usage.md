@@ -1,5 +1,23 @@
 # Agent usage
 
+## Latest received across all managed inboxes
+
+Use the direct API origin and an operator-supplied bearer token; documentation is available without credentials.
+
+```sh
+curl -sS -H "Authorization: Bearer $ADMIN_API_TOKEN" \
+  "$MAIL_API_BASE_URL/v1/messages/latest"
+```
+
+```powershell
+curl.exe -sS -H "Authorization: Bearer $env:ADMIN_API_TOKEN" `
+  "$env:MAIL_API_BASE_URL/v1/messages/latest"
+```
+
+A 200 response contains the full message body, `account` (the receiving managed mailbox), and `receivedAt` (IMAP INTERNALDATE). A bodyless 204 means no accounts or all inboxes empty. No mailbox argument or folder/filter parameters are accepted. Unlike the unchanged per-account latest endpoint, which selects the highest UID in one folder, this operation selects by receipt metadata across managed INBOXes. It does not mark messages Seen.
+
+Each request scans every INBOX sequentially with bounded concurrency; frequent polling repeats the full scan. There is no cache or index. This is not a cross-mailbox snapshot: mail arriving after an inbox was scanned may require another request. INTERNALDATE can be preserved on imports or copies and is not proof of arrival. Any mailbox failure fails the request rather than returning a partial result.
+
 ## Read Bob's latest email
 
 Connect to the Tailnet and use the direct API origin supplied by the frontend's `/llms.txt`. Fetch `/docs` and `/docs/openapi.json` without credentials; use the bearer token only with operations on that direct API origin. The frontend `/api` routes are a browser BFF, not the agent API. Nonbrowser requests do not need an Origin header. Mutations with bodies use JSON.

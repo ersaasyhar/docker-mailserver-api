@@ -7,4 +7,5 @@
 - [Agent usage guide](/docs)
 - [OpenAPI contract](/docs/openapi.json)
 
+GET /v1/messages/latest returns the full latest received message across managed INBOXes, or 204 when all are empty.
 GET /v1/accounts/{email}/messages/latest returns the full latest message, or 204 when the folder is empty.

@@ -4,7 +4,7 @@ import { AccountService, KeyedMutex, Mutex } from "../src/accounts";
 import { AppError, createApp } from "../src/app";
 import type { Config } from "../src/config";
 import type { DmsClient } from "../src/dms";
-import type { MailService } from "../src/mail";
+import type { LatestReceivedMessage, MailService } from "../src/mail";
 import {
   type FolderItem,
   type MessageDetail,
@@ -79,6 +79,11 @@ class FakeDmsClient implements DmsClient {
 
 class FakeMailService implements MailService {
   public messagesByAccount: Record<string, Record<number, MessageDetail>> = {};
+  public latestByAccount: Record<string, LatestReceivedMessage | null> = {};
+  public latestCalls: Array<{ email: string; folder: string }> = [];
+  public latestFailures: Record<string, AppError> = {};
+  public detailCalls: Array<{ email: string; uid: number }> = [];
+  public detailFailure?: AppError;
   public flagsByAccount: Record<string, Record<number, string[]>> = {};
   public uidValidityByAccount: Record<string, string> = {};
   public sendCallCount = 0;
@@ -92,6 +97,12 @@ class FakeMailService implements MailService {
   }> = [];
   public beforeListMessages?: (email: string, callNumber: number) => void;
   public afterListMessages?: (email: string, callNumber: number) => void;
+
+  async findLatestReceivedMessage(email: string, folder: string) {
+    this.latestCalls.push({ email, folder });
+    if (this.latestFailures[email]) throw this.latestFailures[email];
+    return this.latestByAccount[email] ?? null;
+  }
 
   async listFolders(_email: string): Promise<FolderItem[]> {
     return [
@@ -166,6 +177,8 @@ class FakeMailService implements MailService {
     uid: number,
     params: { folder: string; uidValidity: string },
   ): Promise<MessageDetail> {
+    this.detailCalls.push({ email, uid });
+    if (this.detailFailure) throw this.detailFailure;
     const currentValidity = this.uidValidityByAccount[email] || "1000";
     if (params.uidValidity && params.uidValidity !== currentValidity) {
       throw new AppError("STALE_MAILBOX", "Mailbox state is stale.");
@@ -340,6 +353,137 @@ function seedMessages(
     messages.map((message) => [message.uid, message]),
   );
 }
+
+describe("global latest received", () => {
+  const first = "admin@korintus.me";
+  const second = "user@korintus.me";
+  const auth = { Authorization: `Bearer ${TEST_TOKEN}` };
+  const url = "http://localhost/v1/messages/latest";
+  function seed(mail: FakeMailService) {
+    seedMessages(mail, first, [
+      { ...makeMessage(7, "first", { flags: [] }), date: "2030-01-01" },
+    ]);
+    seedMessages(mail, second, [
+      makeMessage(7, "winning body", { flags: ["$Custom"] }),
+    ]);
+    mail.latestByAccount[first] = {
+      uid: 7,
+      folder: "INBOX",
+      uidValidity: "1000",
+      receivedAt: "2024-01-01T00:00:00.000Z",
+    };
+    mail.latestByAccount[second] = {
+      uid: 7,
+      folder: "INBOX",
+      uidValidity: "1000",
+      receivedAt: "2024-01-02T00:00:00.000Z",
+    };
+  }
+
+  it("scans managed inboxes and reads only the receipt-time winner", async () => {
+    const { app, mail, fakeDms } = setupTestEnvironment();
+    seed(mail);
+    fakeDms.accounts.push("outside@example.org");
+    const response = await app.handle(new Request(url, { headers: auth }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ...mail.messagesByAccount[second][7],
+      account: second,
+      receivedAt: "2024-01-02T00:00:00.000Z",
+    });
+    expect(mail.latestCalls).toEqual([
+      { email: first, folder: "INBOX" },
+      { email: second, folder: "INBOX" },
+    ]);
+    expect(mail.detailCalls).toEqual([{ email: second, uid: 7 }]);
+  });
+
+  it("breaks account ties independent of order and returns bodyless empty results", async () => {
+    const { app, mail, fakeDms } = setupTestEnvironment();
+    seed(mail);
+    fakeDms.accounts.reverse();
+    mail.latestByAccount[second] = mail.latestByAccount[first];
+    const result = await app.handle(new Request(url, { headers: auth }));
+    expect((await result.json()).account).toBe(first);
+    mail.latestByAccount = {};
+    for (const accounts of [[first, second], []]) {
+      fakeDms.accounts = accounts;
+      const response = await app.handle(new Request(url, { headers: auth }));
+      expect(response.status).toBe(204);
+      expect(await response.text()).toBe("");
+    }
+  });
+
+  it("authenticates before scans and rejects query keys", async () => {
+    const { app, mail } = setupTestEnvironment();
+    for (const headers of [
+      new Headers(),
+      new Headers({ Authorization: "Bearer wrong" }),
+    ]) {
+      expect((await app.handle(new Request(url, { headers }))).status).toBe(
+        401,
+      );
+    }
+    expect(mail.latestCalls).toEqual([]);
+    expect(
+      (await app.handle(new Request(`${url}?folder=INBOX`, { headers: auth })))
+        .status,
+    ).toBe(400);
+    expect(mail.latestCalls).toEqual([]);
+  });
+
+  it("discovers and calls the operation over loopback HTTP", async () => {
+    const { app, mail } = setupTestEnvironment();
+    seed(mail);
+    app.listen({ hostname: "127.0.0.1", port: 0 });
+    try {
+      const base = `http://127.0.0.1:${app.server?.port}`;
+      const docs = await fetch(`${base}/docs/openapi.json`);
+      expect(docs.status).toBe(200);
+      const document = (await docs.json()) as OpenApiDocument;
+      const path = getOpenApiOperations(document).find(
+        ({ operation }) => operation.operationId === "getLatestReceivedMessage",
+      )?.path;
+      expect(path).toBe("/v1/messages/latest");
+      expect((await fetch(`${base}${path}`)).status).toBe(401);
+      const response = await fetch(`${base}${path}`, { headers: auth });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        ...mail.messagesByAccount[second][7],
+        account: second,
+        receivedAt: "2024-01-02T00:00:00.000Z",
+      });
+    } finally {
+      await app.stop();
+    }
+  });
+
+  it("propagates scan and winner detail failures without fallback", async () => {
+    for (const code of ["BUSY", "UPSTREAM_FAILURE"] as const) {
+      const { app, mail } = setupTestEnvironment();
+      seed(mail);
+      mail.latestFailures[second] = new AppError(code);
+      const response = await app.handle(new Request(url, { headers: auth }));
+      expect(response.status).toBe(code === "BUSY" ? 503 : 502);
+      expect(mail.detailCalls).toEqual([]);
+    }
+    for (const code of [
+      "NOT_FOUND",
+      "STALE_MAILBOX",
+      "MESSAGE_TOO_LARGE",
+    ] as const) {
+      const { app, mail } = setupTestEnvironment();
+      seed(mail);
+      mail.detailFailure = new AppError(code);
+      const response = await app.handle(new Request(url, { headers: auth }));
+      expect(response.status).toBe(
+        code === "NOT_FOUND" ? 404 : code === "STALE_MAILBOX" ? 409 : 413,
+      );
+      expect((await response.json()).error.code).toBe(code);
+      expect(mail.detailCalls).toEqual([{ email: second, uid: 7 }]);
+    }
+  });
+});
 
 function scriptedLatestResponse(message: MessageDetail | null): {
   items: MessageSummary[];
@@ -1189,7 +1333,7 @@ describe("API documentation routes and OpenAPI contract", () => {
     expect(docs.headers.get("content-type")).toContain("text/markdown");
     expect(docs.headers.get("cache-control")).toBe("no-store");
     expect(docs.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(await docs.text()).toContain("latest");
+    expect(await docs.text()).toContain("/v1/messages/latest");
 
     const discovery = await app.handle(
       new Request("http://localhost/llms.txt"),
@@ -1201,6 +1345,7 @@ describe("API documentation routes and OpenAPI contract", () => {
     const discoveryText = await discovery.text();
     expect(discoveryText).toContain("# Docker Mailserver API");
     expect(discoveryText).toContain("/docs/openapi.json");
+    expect(discoveryText).toContain("/v1/messages/latest");
 
     const openapi = await app.handle(
       new Request("http://localhost/docs/openapi.json"),
@@ -1276,6 +1421,7 @@ describe("API documentation routes and OpenAPI contract", () => {
       "GET /docs/openapi.json getOpenApiDocument",
       "GET /docs getApiUsageGuide",
       "GET /llms.txt getAgentDiscovery",
+      "GET /v1/messages/latest getLatestReceivedMessage",
       "GET /v1/accounts listAccounts",
       "POST /v1/accounts createAccount",
       "GET /v1/accounts/{email} getAccount",
@@ -1323,6 +1469,15 @@ describe("API documentation routes and OpenAPI contract", () => {
     expect(explicitlyUnauthenticated).toEqual(
       ["GET /docs", "GET /docs/openapi.json", "GET /llms.txt"].sort(),
     );
+
+    const globalLatest = operations.find(
+      ({ path }) => path === "/v1/messages/latest",
+    )?.operation;
+    expect(globalLatest?.security).toBeUndefined();
+    expect(
+      globalLatest?.responses?.["200"]?.content?.["application/json"]?.schema,
+    ).toEqual({ $ref: "#/components/schemas/GlobalLatestMessageDetail" });
+    expect(globalLatest?.responses?.["204"]?.content).toBeUndefined();
 
     const latest = operations.find(
       ({ method, path: routePath }) =>
